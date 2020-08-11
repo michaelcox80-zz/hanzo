@@ -1,0 +1,56 @@
+#!/usr/bin/env groovy
+pipeline {
+    environment {
+        registry = "michaelcox80/hello-world-python"
+        registryCredential = 'dockerhub'
+    }
+    agent any
+    stages {
+        stage ('Checkout source code') {
+            steps {
+                git branch: 'master', credentialsId: '31e4d579-2587-425e-9913-36dbff9342bd',url: 'git@git.netforce.dev:test/python-hello-world.git'
+            }
+        }
+        stage ('Build Docker image') {
+            steps {
+                script {
+                    dockerImage = docker.build registry + ":latest"
+                }
+            }
+        }
+        stage('Push Image to DockerHub') {
+            steps{
+                script {
+                    docker.withRegistry( '', registryCredential ) {
+                    dockerImage.push()
+                    }
+                }
+            }
+        }
+        stage('EKS Deploy') {
+            steps{
+                sh '''#!/bin/bash
+                    cd terraform
+                    terraform init
+                    terraform apply -auto-approve
+                    aws eks --region eu-west-1 update-kubeconfig --name \$(terraform output cluster_name)
+                    cd ..
+                    kubectl apply -f app.yml
+                    sleep 10
+                    kubectl get services
+                '''
+            }
+        }
+
+        stage('Test') {
+            steps{
+                // use shell to run the kubectl command and get the status of the pod/deploy (try manually first)
+                // https://www.jenkins.io/doc/pipeline/steps/workflow-durable-task-step/#sh-shell-script
+                //def yamloutput = sh script: "kubectl get deploy/pod -o yaml ", returnStdout: true
+
+                //use yaml reader to parse the output and check the status https://www.jenkins.io/doc/pipeline/steps/pipeline-utility-steps/#readyaml-read-yaml-from-files-in-the-workspace-or-text
+                //def datas = readYaml text: yamloutput
+            }
+        }
+    }
+}
